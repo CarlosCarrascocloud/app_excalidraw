@@ -4,112 +4,23 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Qallpa Scalidraw - Colaborativo</title>
-    <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-            overflow: hidden;
-            height: 100vh;
-            width: 100vw;
-        }
-
-        #app-container {
-            display: flex;
-            flex-direction: column;
-            height: 100vh;
-        }
-
-        #toolbar {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            padding: 8px 16px;
-            background: #1e1e2e;
-            color: #cdd6f4;
-            font-size: 13px;
-            z-index: 100;
-        }
-
-        #toolbar .left {
-            display: flex;
-            align-items: center;
-            gap: 12px;
-        }
-
-        #status-indicator {
-            width: 10px;
-            height: 10px;
-            border-radius: 50%;
-            background: #f38ba8;
-            transition: background 0.3s;
-        }
-
-        #status-indicator.connected {
-            background: #a6e3a1;
-        }
-
-        #status-text {
-            font-size: 12px;
-            opacity: 0.8;
-        }
-
-        #users-count {
-            background: #45475a;
-            padding: 2px 10px;
-            border-radius: 12px;
-            font-size: 12px;
-        }
-
-        #excalidraw-container {
-            flex: 1;
-            position: relative;
-        }
-
-        /* Loading overlay */
-        #loading-overlay {
-            position: fixed;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            background: #1e1e2e;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            z-index: 9999;
-            color: #cdd6f4;
-            transition: opacity 0.3s;
-        }
-
-        #loading-overlay.hidden {
-            opacity: 0;
-            pointer-events: none;
-        }
-
-        .spinner {
-            width: 40px;
-            height: 40px;
-            border: 3px solid #45475a;
-            border-top-color: #89b4fa;
-            border-radius: 50%;
-            animation: spin 0.8s linear infinite;
-            margin-bottom: 16px;
-        }
-
-        @keyframes spin {
-            to { transform: rotate(360deg); }
-        }
-    </style>
+    <title>Qallpa Draw - Colaborativo</title>
+    <link rel="stylesheet" href="css/app.css">
 </head>
 
 <body>
+    <div id="name-modal">
+        <div class="modal-box">
+            <h2>Bienvenido a Qallpa Draw</h2>
+            <p>Ingresa tu nombre para que otros te identifiquen</p>
+            <input type="text" id="name-input" placeholder="Tu nombre..." maxlength="20" autofocus>
+            <div class="modal-buttons">
+                <button id="name-cancel">Entrar sin nombre</button>
+                <button id="name-confirm" class="primary">Entrar</button>
+            </div>
+        </div>
+    </div>
+
     <div id="loading-overlay">
         <div class="spinner"></div>
         <div>Cargando Excalidraw...</div>
@@ -133,192 +44,8 @@
     <script src="https://unpkg.com/react@18.2.0/umd/react.production.min.js"></script>
     <script src="https://unpkg.com/react-dom@18.2.0/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@excalidraw/excalidraw@0.17.3/dist/excalidraw.production.min.js"></script>
-
-    <script>
-        // ===================== CONFIGURACION =====================
-        const WS_PROTOCOL = location.protocol === "https:" ? "wss:" : "ws:";
-        const WS_HOST = location.host;
-
-        // Obtener sala de la URL (?room=nombre)
-        const urlParams = new URLSearchParams(window.location.search);
-        const ROOM_ID = urlParams.get("room") || "default";
-
-        document.getElementById("room-name").textContent = "Sala: " + ROOM_ID;
-
-        // ===================== WEBSOCKET =====================
-        class CollaborationManager {
-            constructor(roomId) {
-                this.roomId = roomId;
-                this.ws = null;
-                this.reconnectAttempts = 0;
-                this.maxReconnectAttempts = 50;
-                this.reconnectDelay = 1000;
-                this.onSceneUpdate = null;
-                this.isReceivingUpdate = false;
-                this.lastSentHash = null;
-                this.connect();
-            }
-
-            connect() {
-                var basePath = location.pathname;
-                if (!basePath.endsWith("/")) basePath += "/";
-                const wsUrl = WS_PROTOCOL + "//" + WS_HOST + basePath + "?room=" + encodeURIComponent(this.roomId);
-                this.ws = new WebSocket(wsUrl);
-
-                this.ws.onopen = () => {
-                    console.log("WebSocket conectado");
-                    this.reconnectAttempts = 0;
-                    this.reconnectDelay = 1000;
-                    this.updateStatus(true);
-                };
-
-                this.ws.onmessage = (event) => {
-                    try {
-                        var msg = JSON.parse(event.data);
-                        if (msg.type === "user-count") {
-                            var el = document.getElementById("users-count");
-                            el.textContent = msg.count + " conectado" + (msg.count !== 1 ? "s" : "");
-                        }
-                        if (msg.type === "scene-init" || msg.type === "scene-update") {
-                            if (this.onSceneUpdate && msg.data) {
-                                this.isReceivingUpdate = true;
-                                this.onSceneUpdate(msg.data);
-                                setTimeout(() => { this.isReceivingUpdate = false; }, 100);
-                            }
-                        }
-                    } catch (e) {
-                        console.error("Error procesando mensaje WS:", e);
-                    }
-                };
-
-                this.ws.onclose = () => {
-                    console.log("WebSocket desconectado");
-                    this.updateStatus(false);
-                    this.attemptReconnect();
-                };
-
-                this.ws.onerror = function(err) {
-                    console.error("Error WebSocket:", err);
-                };
-            }
-
-            attemptReconnect() {
-                if (this.reconnectAttempts >= this.maxReconnectAttempts) {
-                    console.error("Maximo de reconexiones alcanzado");
-                    return;
-                }
-                this.reconnectAttempts++;
-                var delay = Math.min(this.reconnectDelay * Math.pow(1.5, this.reconnectAttempts - 1), 30000);
-                console.log("Reconectando en " + Math.round(delay / 1000) + "s... (intento " + this.reconnectAttempts + ")");
-                setTimeout(() => this.connect(), delay);
-            }
-
-            sendSceneUpdate(elements, appState) {
-                if (this.isReceivingUpdate) return;
-                if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return;
-
-                var cleanElements = elements.map(function(el) {
-                    return Object.assign({}, el);
-                });
-
-                var hash = JSON.stringify(cleanElements);
-                if (hash === this.lastSentHash) return;
-                this.lastSentHash = hash;
-
-                var data = {
-                    elements: cleanElements,
-                    appState: {
-                        viewBackgroundColor: (appState && appState.viewBackgroundColor) || "#ffffff"
-                    }
-                };
-
-                this.ws.send(JSON.stringify({
-                    type: "scene-update",
-                    data: data
-                }));
-            }
-
-            updateStatus(connected) {
-                var indicator = document.getElementById("status-indicator");
-                var text = document.getElementById("status-text");
-                if (connected) {
-                    indicator.classList.add("connected");
-                    text.textContent = "Conectado";
-                } else {
-                    indicator.classList.remove("connected");
-                    text.textContent = "Reconectando...";
-                }
-            }
-        }
-
-        // ===================== EXCALIDRAW APP =====================
-        var collab = new CollaborationManager(ROOM_ID);
-
-        var sendTimeout = null;
-        function throttledSend(elements, appState) {
-            if (sendTimeout) clearTimeout(sendTimeout);
-            sendTimeout = setTimeout(function() {
-                collab.sendSceneUpdate(elements, appState);
-            }, 100);
-        }
-
-        var excalidrawApi = null;
-
-        collab.onSceneUpdate = function(data) {
-            if (excalidrawApi && data.elements) {
-                excalidrawApi.updateScene({
-                    elements: data.elements,
-                    appState: data.appState || {}
-                });
-            }
-        };
-
-        function initExcalidraw() {
-            var ExcalidrawLib = window.ExcalidrawLib;
-            if (!ExcalidrawLib) {
-                console.error("ExcalidrawLib no disponible");
-                return;
-            }
-
-            var App = function() {
-                return React.createElement(ExcalidrawLib.Excalidraw, {
-                    excalidrawAPI: function(api) {
-                        excalidrawApi = api;
-                        document.getElementById("loading-overlay").classList.add("hidden");
-                    },
-                    onChange: function(elements, appState) {
-                        throttledSend(elements, appState);
-                    },
-                    initialData: {
-                        appState: {
-                            viewBackgroundColor: "#ffffff",
-                            theme: "light"
-                        }
-                    },
-                    UIOptions: {
-                        canvasActions: {
-                            loadScene: true,
-                            export: { saveFileToDisk: true }
-                        }
-                    }
-                });
-            };
-
-            var container = document.getElementById("excalidraw-container");
-            var root = ReactDOM.createRoot(container);
-            root.render(React.createElement(App));
-        }
-
-        function waitForExcalidraw() {
-            if (window.ExcalidrawLib) {
-                initExcalidraw();
-            } else {
-                setTimeout(waitForExcalidraw, 200);
-            }
-        }
-
-        waitForExcalidraw();
-    </script>
+    <script src="js/collaboration.js"></script>
+    <script src="js/app.js"></script>
 </body>
 
 </html>
