@@ -1,0 +1,49 @@
+services:
+  frontend:
+    image: alswl/excalidraw:v0.18.0-fork-b3
+    container_name: excalidraw-frontend
+    restart: unless-stopped
+    environment:
+      - VITE_APP_BACKEND_V2_GET_URL=https://app.qallpatic.com.pe/excalidraw-api/api/v2/scenes/
+      - VITE_APP_BACKEND_V2_POST_URL=https://app.qallpatic.com.pe/excalidraw-api/api/v2/scenes/
+      #- VITE_APP_WS_SERVER_URL=https://app.qallpatic.com.pe/excalidraw-server/
+      #- VITE_APP_WS_SERVER_URL=wss://app.qallpatic.com.pe/excalidraw-server/
+      - VITE_APP_WS_SERVER_URL=https://excalidraw-room.qallpatic.com/
+      - VITE_APP_FIREBASE_CONFIG={}
+      - VITE_APP_HTTP_STORAGE_BACKEND_URL=https://app.qallpatic.com.pe/excalidraw-api/api/v2
+      - VITE_APP_STORAGE_BACKEND=http
+    ports:
+      - "8092:80"
+    depends_on:
+      - storage
+      - room
+
+  storage:
+    image: alswl/excalidraw-storage-backend:v2023.11.11
+    container_name: excalidraw-storage
+    restart: unless-stopped
+    environment:
+      - PORT=8081
+    ports:
+      - "8093:8081"
+
+  room:
+    image: excalidraw/excalidraw-room:sha-49bf529
+    container_name: excalidraw-room
+    restart: unless-stopped
+    ports:
+      - "8094:80"
+
+  scalidraw:
+    build: .
+    container_name: excalidraw-scalidraw
+    restart: unless-stopped
+    ports:
+      - "8095:3030"
+    networks:
+      - default
+      - proxy-network
+
+networks:
+  proxy-network:
+    external: true
