@@ -2,17 +2,50 @@ const express = require("express");
 const http = require("http");
 const { WebSocketServer } = require("ws");
 const path = require("path");
+const fs = require("fs");
 
 const app = express();
 const server = http.createServer(app);
 const wss = new WebSocketServer({ server, maxPayload: 50 * 1024 * 1024 });
 
 const publicDir = path.join(__dirname, "public");
+const dataDir = path.join(__dirname, "data");
+
+if (!fs.existsSync(dataDir)) fs.mkdirSync(dataDir);
+
 app.use("/", express.static(publicDir));
-app.use("/scalidraw", express.static(publicDir));
+app.use("/excalidraw", express.static(publicDir));
 
 // Estado de cada sala
 const rooms = new Map();
+
+// Cargar salas persistidas al iniciar
+fs.readdirSync(dataDir).forEach((file) => {
+  if (!file.endsWith(".json")) return;
+  try {
+    const roomId = file.replace(".json", "");
+    const data = JSON.parse(fs.readFileSync(path.join(dataDir, file), "utf8"));
+    rooms.set(roomId, data);
+    console.log(`[disk] Sala cargada: ${roomId}`);
+  } catch (e) {
+    console.error(`[disk] Error cargando ${file}:`, e.message);
+  }
+});
+
+// Timers de escritura a disco por sala (throttle 2s)
+const saveTimers = new Map();
+
+function scheduleSave(roomId) {
+  if (saveTimers.has(roomId)) return;
+  saveTimers.set(roomId, setTimeout(() => {
+    saveTimers.delete(roomId);
+    const data = rooms.get(roomId);
+    if (!data) return;
+    fs.writeFile(path.join(dataDir, `${roomId}.json`), JSON.stringify(data), (err) => {
+      if (err) console.error(`[disk] Error guardando sala ${roomId}:`, err.message);
+    });
+  }, 2000));
+}
 
 wss.on("connection", (ws, req) => {
   const url = new URL(req.url, `http://${req.headers.host}`);
@@ -53,6 +86,7 @@ wss.on("connection", (ws, req) => {
           }
         }
         rooms.set(roomId, roomData);
+        scheduleSave(roomId);
 
         const now = Date.now();
         const elapsed = now - ws.lastSceneBroadcast;
